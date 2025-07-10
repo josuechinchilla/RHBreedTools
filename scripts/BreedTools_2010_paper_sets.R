@@ -3,11 +3,11 @@ library(scales)
 library(tidyverse)
 
 # read in data
-reference = read.table("~/Desktop/BreedToolspoly_test/blueberry_ref.txt", header = T, row.names = 1, sep = "\t")
+reference = read.table("https://github.com/josuechinchilla/RHBreedTools/blob/main/data/2010_reference.txt", header = T, row.names = 1, sep = "\t")
 
-validation = read.table("~/Desktop/BreedToolspoly_test/blueberry_test.txt", header = T, row.names = 1, sep = "\t")
+validation = read.table("https://github.com/josuechinchilla/RHBreedTools/blob/main/data/2010_validation.txt", header = T, row.names = 1, sep = "\t")
 
-reference_ids = read.table("~/Desktop/BreedToolspoly_test/ref_ids.txt", header = T, sep = "\t") 
+reference_ids = read.table("https://github.com/josuechinchilla/RHBreedTools/blob/main/data/ref_ids.txt", header = T, sep = "\t") 
 
 ref_ids = lapply(as.list(reference_ids),as.character)
 
