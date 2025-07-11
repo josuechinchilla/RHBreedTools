@@ -1,0 +1,12 @@
+name: RHB_estimation_app
+title: RHB_estimation_app
+username: bi-slurm-generator
+account: bi-slurm-generator
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15064015
+bundleId: 10601843
+url: https://bi-jcv.shinyapps.io/RHB_estimation_app/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
