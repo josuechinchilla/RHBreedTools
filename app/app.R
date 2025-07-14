@@ -54,23 +54,28 @@ ui <- fluidPage(
     column(12,
            wellPanel(
              HTML('
-             <ul>
-               <li>This tool was developed by <strong>Breeding Insight</strong> in collaboration with the USDA Honey Bee Breeding, Genetics, and Physiology Research Lab.</li>
-               <li>It estimates the proportion of <strong>Russian Honey Bee (RHB)</strong> ancestry in genotype samples using methods from 
-                 <a href="https://www.animalsciencepublications.org/publications/tas/articles/1/1/36" target="_blank">Funkhouser et al. (2017)</a>.
-               </li>
-               <li><strong>Input format:</strong> Upload a genotype matrix (.txt) with SNPs in rows and samples in columns. The first three columns must be <code>ID</code>, <code>ref</code>, and <code>alt</code>. Following columns contain genotype calls (0,1,2).</li>
-               <li>Example format:
-                 <pre>
+  <ul>
+    <li>This tool was developed by <strong>Breeding Insight</strong> in collaboration with the USDA Honey Bee Breeding, Genetics, and Physiology Research Lab.</li>
+    <li>It estimates the proportion of <strong>Russian Honey Bee (RHB)</strong> ancestry in genotype samples using methods from 
+      <a href="https://www.animalsciencepublications.org/publications/tas/articles/1/1/36" target="_blank">Funkhouser et al. (2017)</a>.
+    </li>
+    <li><strong>Input format:</strong> Upload a genotype matrix (.txt) with SNPs in rows and samples in columns. The first three columns must be <code>ID</code>, <code>ref</code>, and <code>alt</code>. Following columns contain genotype calls (0,1,2).</li>
+    <li>Example format:
+      <pre>
 ID    ref  alt  Sample1  Sample2  Sample3 ...
 SNP1  T    A    0        0        0
 SNP2  G    C    0        0        0
 SNP3  A    C    1        1        1
-                 </pre>
-               </li>
-               <li>Results can be downloaded as an Excel file.</li>
-             </ul>
-           ')
+      </pre>
+    </li>
+    <li>Results can be downloaded as an Excel file.</li>
+  </ul>
+  <p><strong>For publication, please cite:</strong></p>
+  <ul>
+    <li><a href="https://academic.oup.com/tas/article/1/1/36/4636602" target="_blank">Funkhouser et al.</a> for original breedTools methods</li>
+    <li><a href="https://acsess.onlinelibrary.wiley.com/doi/10.1002/tpg2.70067" target="_blank">Sandercock et al.</a> for methods expansion to polyploidy</li>
+  </ul>
+')
            )
     )
   ),
@@ -121,18 +126,27 @@ server <- function(input, output, session) {
     prediction <- as.data.frame(BIGr:::solve_composition_poly(validation, freq, ploidy = 2)) %>%
       select(-R2) %>%
       rename(
-        `RHB content` = RHB,
-        `non-RHB content` = non.RHB
+        `RHB` = RHB,
+        `non-RHB` = non.RHB
       )
     
-    columns_to_select <- c("RHB content", "non-RHB content")
+    columns_to_select <- c("RHB", "non-RHB")
     
     pred_results <- prediction %>%
       as.data.frame() %>%
       rownames_to_column(var = "ID") %>%
       mutate(
-        across(-ID, ~format_percent(.)),
-        `Predicted line` = columns_to_select[max.col(select(., all_of(columns_to_select)), ties.method = "first")]
+        across(c("RHB", "non-RHB"), ~ round(.x * 100, 0))  # multiply by 100 and round 0 decimals
+      )
+    
+    # Rename columns to include % in header but keep numeric values raw
+    colnames(pred_results)[colnames(pred_results) == "RHB"] <- "RHB (%)"
+    colnames(pred_results)[colnames(pred_results) == "non-RHB"] <- "non-RHB (%)"
+    
+    # Add predicted line column based on max value in RHB and non-RHB columns
+    pred_results <- pred_results %>%
+      mutate(
+        `Predicted line` = columns_to_select[max.col(select(., all_of(c("RHB (%)", "non-RHB (%)"))), ties.method = "first")]
       )
     
     result_data(pred_results)
