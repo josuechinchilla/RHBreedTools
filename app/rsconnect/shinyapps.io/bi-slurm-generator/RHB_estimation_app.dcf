@@ -5,8 +5,8 @@ account: bi-slurm-generator
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 15064015
-bundleId: 10615481
-url: https://bi-jcv.shinyapps.io/RHB_estimation_app/
+bundleId: 11396014
+url: https://bi-science.shinyapps.io/RHB_estimation_app/
 version: 1
 asMultiple: FALSE
 asStatic: FALSE
