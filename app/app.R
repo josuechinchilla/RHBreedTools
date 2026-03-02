@@ -123,11 +123,13 @@ server <- function(input, output, session) {
         input$validation_file$datapath,
         header = TRUE,
         row.names = 1,
-        sep = "\t"
+        sep = "\t",
+        na.strings = "."
       ) %>%
         dplyr::select(-c(1, 2)) %>%
         t()
-    )
+    ) %>%
+      mutate(across(everything(), ~ as.numeric(.x)))
     
     # Allele frequency
     freq <- BIGr:::allele_freq_poly(reference, ref_ids, ploidy = 2)
