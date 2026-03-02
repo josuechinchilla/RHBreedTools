@@ -89,7 +89,7 @@ SNP3  A    C    1        1        1
         tabPanel("Results Table", DT::dataTableOutput("preview")),
         tabPanel("Ancestry Plot", plotOutput("bar_plot"))
       ),
-      verbatimTextOutput("status")
+      htmlOutput("status")
     )
   )
 )
@@ -101,24 +101,27 @@ server <- function(input, output, session) {
   
   observeEvent(input$run, {
     req(input$validation_file)
-    output$status <- renderText("Running estimation...")
+    output$status <- renderUI(HTML(
+      '<p style="color: black;">Running estimation...</p>'
+    ))
     
     # Read raw header to catch duplicate column names before read.table silently renames them
     raw_header <- scan(input$validation_file$datapath, what = "", nlines = 1, quiet = TRUE)
     sample_ids <- raw_header[-c(1, 2, 3)]  # remove ID, ref, alt columns
     dup_ids <- sample_ids[duplicated(sample_ids)]
     if (length(dup_ids) > 0) {
-      output$status <- renderText(
+      output$status <- renderUI(HTML(
         paste0(
-          "ERROR: Duplicate sample IDs detected. Please check your input file and remove or rename the following IDs: ",
-          paste(dup_ids, collapse = ", ")
+          '<p style="color: red; font-weight: bold;">ERROR: Duplicate sample IDs detected. ',
+          'Please check your input file and remove or rename the following IDs: ',
+          paste(dup_ids, collapse = ", "), "</p>"
         )
-      )
+      ))
       return()
     }
     
     # Read validation data
-    validation <- as.data.frame(
+    validation_raw <- as.data.frame(
       read.table(
         input$validation_file$datapath,
         header = TRUE,
@@ -130,6 +133,36 @@ server <- function(input, output, session) {
         t()
     ) %>%
       mutate(across(everything(), ~ as.numeric(.x)))
+    
+    # Identify removed samples (< 50% genotyping rate)
+    sample_call_rate <- rowSums(!is.na(validation_raw)) / ncol(validation_raw)
+    removed_samples <- rownames(validation_raw)[sample_call_rate < 0.5]
+    
+    # Identify removed markers (all NA)
+    validation_filtered_samples <- validation_raw %>%
+      filter(rowSums(!is.na(.)) / ncol(.) >= 0.5)
+    removed_markers <- colnames(validation_filtered_samples)[
+      colSums(!is.na(validation_filtered_samples)) == 0
+    ]
+    
+    # Apply filters
+    validation <- validation_filtered_samples %>%
+      select(where(~ sum(!is.na(.x)) > 0))
+    
+    # Build warning HTML lines
+    warning_html <- c()
+    if (length(removed_samples) > 0) {
+      warning_html <- c(warning_html, paste0(
+        '<p style="color: #e6a817; font-weight: bold;">WARNING: The following samples were removed due to genotyping rate &lt; 50%: ',
+        paste(removed_samples, collapse = ", "), "</p>"
+      ))
+    }
+    if (length(removed_markers) > 0) {
+      warning_html <- c(warning_html, paste0(
+        '<p style="color: #e6a817; font-weight: bold;">WARNING: The following markers were removed because they had no successful genotype calls: ',
+        paste(removed_markers, collapse = ", "), "</p>"
+      ))
+    }
     
     # Allele frequency
     freq <- BIGr:::allele_freq_poly(reference, ref_ids, ploidy = 2)
@@ -199,7 +232,13 @@ server <- function(input, output, session) {
         theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
     })
     
-    output$status <- renderText("Estimation complete. File ready for download.")
+    # Final status message with success in green and any warnings in yellow
+    status_html <- paste(
+      c('<p style="color: green; font-weight: bold;">Estimation complete. File ready for download.</p>',
+        warning_html),
+      collapse = "\n"
+    )
+    output$status <- renderUI(HTML(status_html))
   })
   
   output$download_results <- downloadHandler(
