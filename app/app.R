@@ -57,13 +57,13 @@ ui <- fluidPage(
     <li>It estimates the proportion of <strong>Russian Honey Bee (RHB)</strong> ancestry in genotype samples using methods from
       <a href="https://www.animalsciencepublications.org/publications/tas/articles/1/1/36" target="_blank">Funkhouser et al. (2017)</a>.
     </li>
-    <li><strong>Input format:</strong> Upload a genotype matrix (.txt) with SNPs in rows and samples in columns. The first three columns must be <code>ID</code>, <code>ref</code>, and <code>alt</code>. Following columns contain genotype calls (0,1,2).</li>
+    <li><strong>Input format:</strong> Upload a genotype matrix (.txt) with SNPs in rows and samples in columns. The first three columns must be <code>ID</code>, <code>ref</code>, and <code>alt</code>. Following columns contain genotype calls (0,1,2) with missing genotype coded as ".".</li>
     <li>Example format:
       <pre>
 ID    ref  alt  Sample1  Sample2  Sample3 ...
 SNP1  T    A    0        0        0
-SNP2  G    C    0        0        0
-SNP3  A    C    1        1        1
+SNP2  G    C    0        .        0
+SNP3  A    C    .        1        1
       </pre>
     </li>
     <li>Results can be downloaded as an Excel file.</li>
