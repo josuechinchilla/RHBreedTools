@@ -27,6 +27,7 @@ reference_ids <- read.table(
   header = TRUE,
   sep = "\t"
 )
+
 ref_ids <- lapply(as.list(reference_ids), as.character)
 
 #### UI ####
@@ -43,20 +44,17 @@ ui <- fluidPage(
       }
     "))
   ),
-  
   div(class = "header-img",
       img(src = "logos.png", alt = "Logos")
   ),
-  
   titlePanel("Russian Honeybee (RHB) content estimation"),
-  
   fluidRow(
     column(12,
            wellPanel(
              HTML('
   <ul>
     <li>This tool was developed by <strong>Breeding Insight</strong> in collaboration with the USDA Honey Bee Breeding, Genetics, and Physiology Research Lab.</li>
-    <li>It estimates the proportion of <strong>Russian Honey Bee (RHB)</strong> ancestry in genotype samples using methods from 
+    <li>It estimates the proportion of <strong>Russian Honey Bee (RHB)</strong> ancestry in genotype samples using methods from
       <a href="https://www.animalsciencepublications.org/publications/tas/articles/1/1/36" target="_blank">Funkhouser et al. (2017)</a>.
     </li>
     <li><strong>Input format:</strong> Upload a genotype matrix (.txt) with SNPs in rows and samples in columns. The first three columns must be <code>ID</code>, <code>ref</code>, and <code>alt</code>. Following columns contain genotype calls (0,1,2).</li>
@@ -79,7 +77,6 @@ SNP3  A    C    1        1        1
            )
     )
   ),
-  
   sidebarLayout(
     sidebarPanel(
       fileInput("validation_file", "Upload Genotypes to test (.txt)", accept = ".txt"),
@@ -104,8 +101,21 @@ server <- function(input, output, session) {
   
   observeEvent(input$run, {
     req(input$validation_file)
-    
     output$status <- renderText("Running estimation...")
+    
+    # Read raw header to catch duplicate column names before read.table silently renames them
+    raw_header <- scan(input$validation_file$datapath, what = "", nlines = 1, quiet = TRUE)
+    sample_ids <- raw_header[-c(1, 2, 3)]  # remove ID, ref, alt columns
+    dup_ids <- sample_ids[duplicated(sample_ids)]
+    if (length(dup_ids) > 0) {
+      output$status <- renderText(
+        paste0(
+          "ERROR: Duplicate sample IDs detected. Please check your input file and remove or rename the following IDs: ",
+          paste(dup_ids, collapse = ", ")
+        )
+      )
+      return()
+    }
     
     # Read validation data
     validation <- as.data.frame(
@@ -136,7 +146,7 @@ server <- function(input, output, session) {
       as.data.frame() %>%
       rownames_to_column(var = "ID") %>%
       mutate(
-        across(c("RHB", "non-RHB"), ~ round(.x * 100, 0))  # multiply by 100 and round 0 decimals
+        across(c("RHB", "non-RHB"), ~ round(.x * 100, 0))
       )
     
     # Rename columns to include % in header but keep numeric values raw
@@ -168,8 +178,8 @@ server <- function(input, output, session) {
       as.data.frame() %>%
       rownames_to_column(var = "ID") %>%
       pivot_longer(
-        cols = where(is.numeric), 
-        names_to = "category", 
+        cols = where(is.numeric),
+        names_to = "category",
         values_to = "percent"
       )
     
@@ -177,7 +187,7 @@ server <- function(input, output, session) {
       ggplot(pred_results_long, aes(x = ID, y = percent, fill = category)) +
         geom_bar(stat = "identity") +
         scale_fill_viridis_d(option = "D") +
-      scale_y_continuous(labels = percent_format(accuracy = 1)) +
+        scale_y_continuous(labels = percent_format(accuracy = 1)) +
         labs(
           x = "Individual ID",
           y = "Ancestry Proportion",
