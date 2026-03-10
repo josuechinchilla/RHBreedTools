@@ -21,13 +21,11 @@ reference <- as.data.frame(
     dplyr::select(-c(1, 2)) %>%
     t()
 )
-
 reference_ids <- read.table(
   "https://raw.githubusercontent.com/josuechinchilla/RHBreedTools/main/data/ref_ids.txt",
   header = TRUE,
   sep = "\t"
 )
-
 ref_ids <- lapply(as.list(reference_ids), as.character)
 
 #### UI ####
@@ -48,6 +46,12 @@ ui <- fluidPage(
       img(src = "logos.png", alt = "Logos")
   ),
   titlePanel("Russian Honeybee (RHB) content estimation"),
+  
+  # Status panel moved to top
+  fluidRow(
+    column(12, htmlOutput("status"))
+  ),
+  
   fluidRow(
     column(12,
            wellPanel(
@@ -88,8 +92,7 @@ SNP3  A    C    .        1        1
       tabsetPanel(
         tabPanel("Results Table", DT::dataTableOutput("preview")),
         tabPanel("Ancestry Plot", plotOutput("bar_plot"))
-      ),
-      htmlOutput("status")
+      )
     )
   )
 )
@@ -105,9 +108,9 @@ server <- function(input, output, session) {
       '<p style="color: black;">Running estimation...</p>'
     ))
     
-    # Read raw header to catch duplicate column names before read.table silently renames them
+    # Read raw header to catch duplicate column names
     raw_header <- scan(input$validation_file$datapath, what = "", nlines = 1, quiet = TRUE)
-    sample_ids <- raw_header[-c(1, 2, 3)]  # remove ID, ref, alt columns
+    sample_ids <- raw_header[-c(1, 2, 3)]
     dup_ids <- sample_ids[duplicated(sample_ids)]
     if (length(dup_ids) > 0) {
       output$status <- renderUI(HTML(
@@ -134,29 +137,55 @@ server <- function(input, output, session) {
     ) %>%
       mutate(across(everything(), ~ as.numeric(.x)))
     
-    # Identify removed samples (< 50% genotyping rate)
+    # Compute genotyping rate for all samples before any filtering
     sample_call_rate <- rowSums(!is.na(validation_raw)) / ncol(validation_raw)
-    removed_samples <- rownames(validation_raw)[sample_call_rate < 0.5]
+    call_rate_df <- data.frame(
+      ID = names(sample_call_rate),
+      `Genotyping Rate (%)` = round(sample_call_rate * 100, 1),
+      check.names = FALSE
+    )
     
-    # Identify removed markers (all NA)
-    validation_filtered_samples <- validation_raw %>%
-      filter(rowSums(!is.na(.)) / ncol(.) >= 0.5)
-    removed_markers <- colnames(validation_filtered_samples)[
-      colSums(!is.na(validation_filtered_samples)) == 0
+    # Categorize samples
+    removed_samples     <- names(sample_call_rate)[sample_call_rate < 0.10]
+    low_call_rate_samples <- names(sample_call_rate)[sample_call_rate >= 0.10 & sample_call_rate < 0.50]
+    
+    # Remove samples below 10% threshold
+    validation_raw <- validation_raw %>%
+      filter(!(rownames(.) %in% removed_samples))
+    
+    # Identify and remove markers with all NA
+    removed_markers <- colnames(validation_raw)[
+      colSums(!is.na(validation_raw)) == 0
     ]
     
-    # Apply filters
-    validation <- validation_filtered_samples %>%
+    # Apply marker filter
+    validation <- validation_raw %>%
       select(where(~ sum(!is.na(.x)) > 0))
     
-    # Build warning HTML lines
+    # Impute missing values with column mean
+    validation_imputed <- validation
+    for (j in seq_along(validation_imputed)) {
+      col <- validation_imputed[[j]]
+      validation_imputed[[j]][is.na(col)] <- mean(col, na.rm = TRUE)
+    }
+    
+    # Build warning HTML
     warning_html <- c()
+    
     if (length(removed_samples) > 0) {
       warning_html <- c(warning_html, paste0(
-        '<p style="color: #e6a817; font-weight: bold;">WARNING: The following samples were removed due to genotyping rate &lt; 50%: ',
+        '<p style="color: red; font-weight: bold;">WARNING: The following samples were removed due to genotyping rate &lt; 10%: ',
         paste(removed_samples, collapse = ", "), "</p>"
       ))
     }
+    
+    if (length(low_call_rate_samples) > 0) {
+      warning_html <- c(warning_html, paste0(
+        '<p style="color: #e6a817; font-weight: bold;">WARNING: The following samples have a genotyping rate &lt; 50% and may produce unreliable estimates: ',
+        paste(low_call_rate_samples, collapse = ", "), "</p>"
+      ))
+    }
+    
     if (length(removed_markers) > 0) {
       warning_html <- c(warning_html, paste0(
         '<p style="color: #e6a817; font-weight: bold;">WARNING: The following markers were removed because they had no successful genotype calls: ',
@@ -168,7 +197,7 @@ server <- function(input, output, session) {
     freq <- BIGr:::allele_freq_poly(reference, ref_ids, ploidy = 2)
     
     # Breed prediction
-    prediction <- as.data.frame(BIGr:::solve_composition_poly(validation, freq, ploidy = 2)) %>%
+    prediction <- as.data.frame(BIGr:::solve_composition_poly(validation_imputed, freq, ploidy = 2)) %>%
       select(-R2) %>%
       rename(
         `RHB` = RHB,
@@ -180,35 +209,44 @@ server <- function(input, output, session) {
     pred_results <- prediction %>%
       as.data.frame() %>%
       rownames_to_column(var = "ID") %>%
-      mutate(
-        across(c("RHB", "non-RHB"), ~ round(.x * 100, 0))
-      )
+      mutate(across(c("RHB", "non-RHB"), ~ round(.x * 100, 0)))
     
-    # Rename columns to include % in header but keep numeric values raw
     colnames(pred_results)[colnames(pred_results) == "RHB"] <- "RHB (%)"
     colnames(pred_results)[colnames(pred_results) == "non-RHB"] <- "non-RHB (%)"
     
-    # Add predicted line column based on max value in RHB and non-RHB columns
     pred_results <- pred_results %>%
       mutate(
         `Predicted line` = columns_to_select[max.col(select(., all_of(c("RHB (%)", "non-RHB (%)"))), ties.method = "first")]
       )
     
-    result_data(pred_results)
+    # Join genotyping rate — includes dropped samples with NA for ancestry columns
+    dropped_df <- data.frame(
+      ID = removed_samples,
+      `RHB (%)` = NA_real_,
+      `non-RHB (%)` = NA_real_,
+      `Predicted line` = "Removed — low genotyping rate",
+      check.names = FALSE
+    )
     
-    # Save Excel file to temp
+    pred_results_full <- bind_rows(pred_results, dropped_df) %>%
+      left_join(call_rate_df, by = "ID") %>%
+      arrange(match(ID, call_rate_df$ID))  # preserve original sample order
+    
+    result_data(pred_results_full)
+    
+    # Save Excel
     date_str <- format(Sys.Date(), "%Y-%m-%d")
     filename <- paste0("RHB_estimation_", date_str, ".xlsx")
     temp_path <- file.path(tempdir(), filename)
     result_filename(temp_path)
-    write.xlsx(pred_results, file = temp_path, rowNames = FALSE)
+    write.xlsx(pred_results_full, file = temp_path, rowNames = FALSE)
     
     # Table
     output$preview <- DT::renderDataTable({
-      DT::datatable(pred_results, options = list(pageLength = 10))
+      DT::datatable(pred_results_full, options = list(pageLength = 10))
     })
     
-    # Plot
+    # Plot — only non-removed samples
     pred_results_long <- prediction %>%
       as.data.frame() %>%
       rownames_to_column(var = "ID") %>%
@@ -232,7 +270,7 @@ server <- function(input, output, session) {
         theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
     })
     
-    # Final status message with success in green and any warnings in yellow
+    # Final status
     status_html <- paste(
       c('<p style="color: green; font-weight: bold;">Estimation complete. File ready for download.</p>',
         warning_html),
